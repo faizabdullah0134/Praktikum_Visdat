@@ -11,7 +11,7 @@ data = {
 df = pd.DataFrame(data)
 
 # Identitas Kelompok
-st.title("Praktikum 3 - Line Plot")
+st.title("Praktikum 4 - Bar Chart")
 st.write("Kelompok 2:")
 st.markdown("""
 - Faiz Abdullah Hanif Firmansyah - 0110222281
