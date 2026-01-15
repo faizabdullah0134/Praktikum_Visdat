@@ -1,15 +1,14 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import seaborn as sns
-import matplotlib.pyplot as plt
+import numpy as np
 
 # CONFIG
-st.set_page_config(page_title="Dashboard Media Sosial", layout="wide")
-
-# LOAD DATA
-df = pd.read_csv("dataset_transformed.csv")
-platform_summary = pd.read_csv("platform_summary.csv")
+st.set_page_config(
+    page_title="Dashboard Kinerja Media Sosial",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # CUSTOM CSS
 st.markdown("""
@@ -46,12 +45,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# HEADER
-st.title("Visualisasi Kinerja Media Sosial")
-st.markdown("Analisis performa media sosial berdasarkan engagement, aktivitas konten, dan efektivitas iklan.")
+# LOAD DATA
+@st.cache_data
+def load_data():
+    return pd.read_csv("dataset_transformed.csv")
+
+df = load_data()
 
 # SIDEBAR FILTER
-st.sidebar.header("🎛 Filter Data")
+st.sidebar.title("Filter Data")
 
 platform_filter = st.sidebar.multiselect(
     "Platform",
@@ -59,49 +61,48 @@ platform_filter = st.sidebar.multiselect(
     default=df["platform"].unique()
 )
 
-follower_min, follower_max = st.sidebar.slider(
-    "Rentang Jumlah Follower",
-    int(df["follower_count"].min()),
-    int(df["follower_count"].max()),
-    (int(df["follower_count"].min()), int(df["follower_count"].max()))
-)
-
-engagement_filter = st.sidebar.multiselect(
-    "Tingkat Engagement",
-    options=df["engagement_level"].unique(),
-    default=df["engagement_level"].unique()
-)
-
-posting_filter = st.sidebar.multiselect(
-    "Intensitas Posting",
-    options=df["posting_intensity"].unique(),
-    default=df["posting_intensity"].unique()
-)
-
-follower_category_filter = st.sidebar.multiselect(
+follower_cat_filter = st.sidebar.multiselect(
     "Kategori Follower",
     options=df["follower_category"].unique(),
     default=df["follower_category"].unique()
 )
 
-ad_min, ad_max = st.sidebar.slider(
-    "Rentang Biaya Iklan (USD)",
-    float(df["ad_spend_(usd)"].min()),
-    float(df["ad_spend_(usd)"].max()),
-    (float(df["ad_spend_(usd)"].min()), float(df["ad_spend_(usd)"].max()))
+# Slider filters
+follower_min, follower_max = int(df["follower_count"].min()), int(df["follower_count"].max())
+eng_min, eng_max = float(df["engagement_rate"].min()), float(df["engagement_rate"].max())
+post_min, post_max = int(df["posts_per_week"].min()), int(df["posts_per_week"].max())
+
+follower_range = st.sidebar.slider(
+    "Rentang Jumlah Follower",
+    follower_min, follower_max,
+    (follower_min, follower_max)
+)
+
+engagement_range = st.sidebar.slider(
+    "Rentang Engagement Rate",
+    eng_min, eng_max,
+    (eng_min, eng_max)
+)
+
+posting_range = st.sidebar.slider(
+    "Rentang Post per Minggu",
+    post_min, post_max,
+    (post_min, post_max)
 )
 
 # APPLY FILTER
 filtered_df = df[
     (df["platform"].isin(platform_filter)) &
-    (df["follower_count"] >= follower_min) &
-    (df["follower_count"] <= follower_max) &
-    (df["engagement_level"].isin(engagement_filter)) &
-    (df["posting_intensity"].isin(posting_filter)) &
-    (df["follower_category"].isin(follower_category_filter)) &
-    (df["ad_spend_(usd)"] >= ad_min) &
-    (df["ad_spend_(usd)"] <= ad_max)
+    (df["follower_category"].isin(follower_cat_filter)) &
+    (df["follower_count"].between(follower_range[0], follower_range[1])) &
+    (df["engagement_rate"].between(engagement_range[0], engagement_range[1])) &
+    (df["posts_per_week"].between(posting_range[0], posting_range[1]))
 ]
+
+# TITLE
+st.title("Dashboard Visualisasi Kinerja Media Sosial")
+st.markdown("Analisis performa media sosial berdasarkan engagement, aktivitas konten, dan jangkauan kampanye.")
+st.markdown("---")
 
 # KPI CARDS
 st.subheader("Ringkasan Data")
@@ -131,149 +132,98 @@ with col4:
 with col5:
     kpi_card("Total Jangkauan", f"{int(filtered_df['campaign_reach'].sum()):,}")
 
-# OVERVIEW
-st.markdown("Komposisi Kategori Follower")
+st.markdown("---")
 
-follower_dist = filtered_df["follower_category"].value_counts().reset_index()
-follower_dist.columns = ["Kategori", "Jumlah"]
+# Helper
+def dominant_text(series):
+    return series.value_counts().idxmax(), series.value_counts(normalize=True).max() * 100
 
-fig_donut = px.pie(follower_dist, names="Kategori", values="Jumlah", hole=0.5)
-st.plotly_chart(fig_donut, use_container_width=True)
+# ROW 1
+col1, col2 = st.columns(2)
 
-if not follower_dist.empty:
-    top_cat = follower_dist.iloc[0]["Kategori"]
-    top_val = follower_dist.iloc[0]["Jumlah"]
-    total = follower_dist["Jumlah"].sum()
-    perc = (top_val / total) * 100
+with col1:
+    df_eng = filtered_df.groupby("platform")["engagement_rate"].mean().reset_index()
+    fig1 = px.bar(df_eng, x="platform", y="engagement_rate",
+                  title="Rata-rata Engagement per Platform",
+                  labels={"platform": "Platform", "engagement_rate": "Engagement Rate"})
+    st.plotly_chart(fig1, use_container_width=True)
 
-st.markdown(f"""
-Kategori follower yang paling dominan adalah **{top_cat}**, dengan proporsi sekitar **{perc:.1f}%** dari total akun yang dianalisis.
-""")
+    dom = df_eng.sort_values("engagement_rate", ascending=False).iloc[0]["platform"]
+    st.caption(f"Platform dengan engagement rata-rata tertinggi adalah **{dom}**. Grafik ini digunakan untuk membandingkan tingkat engagement antar platform.")
 
-# PLATFORM PERFORMANCE
-st.subheader("Performa Platform")
+with col2:
+    df_conv = filtered_df.groupby("platform")["conversion_rate"].mean().reset_index()
+    fig2 = px.bar(df_conv, x="platform", y="conversion_rate",
+                  title="Rata-rata Conversion Rate per Platform",
+                  labels={"platform": "Platform", "conversion_rate": "Conversion Rate"})
+    st.plotly_chart(fig2, use_container_width=True)
 
-col8, col9 = st.columns(2)
+    dom = df_conv.sort_values("conversion_rate", ascending=False).iloc[0]["platform"]
+    st.caption(f"Platform dengan conversion rate tertinggi adalah **{dom}**. Grafik ini digunakan untuk melihat efektivitas platform dalam mendorong tindakan pengguna.")
 
-with col8:
-    fig_bar1 = px.bar(
-        platform_summary,
-        x="platform",
-        y="avg_engagement_rate",
-        labels={"platform": "Platform", "avg_engagement_rate": "Rata-rata Engagement (%)"},
-        title="Rata-rata Engagement per Platform"
-    )
-    fig_bar1.update_layout(height=330)
-    st.plotly_chart(fig_bar1, use_container_width=True)
+# ROW 2
+col1, col2 = st.columns(2)
 
-    top_eng = platform_summary.sort_values("avg_engagement_rate", ascending=False).iloc[0]
-    st.caption(f"Platform dengan engagement tertinggi adalah **{top_eng['platform']}** ({top_eng['avg_engagement_rate']:.2f}%).")
+with col1:
+    fig3 = px.pie(filtered_df, names="follower_category",
+                  title="Distribusi Kategori Follower", hole=0.4)
+    st.plotly_chart(fig3, use_container_width=True)
 
-with col9:
-    fig_bar2 = px.bar(
-        platform_summary,
-        x="platform",
-        y="avg_conversion_rate",
-        labels={"platform": "Platform", "avg_conversion_rate": "Rata-rata Conversion (%)"},
-        title="Rata-rata Conversion Rate per Platform"
-    )
-    fig_bar2.update_layout(height=330)
-    st.plotly_chart(fig_bar2, use_container_width=True)
+    dom, pct = dominant_text(filtered_df["follower_category"])
+    st.caption(f"Kategori follower yang paling dominan adalah **{dom}**, dengan proporsi sekitar **{pct:.1f}%** dari total akun. Grafik ini menunjukkan distribusi akun berdasarkan ukuran jumlah follower.")
 
-    top_conv = platform_summary.sort_values("avg_conversion_rate", ascending=False).iloc[0]
-    st.caption(f"Platform dengan conversion rate tertinggi adalah **{top_conv['platform']}** ({top_conv['avg_conversion_rate']:.2f}%).")
+with col2:
+    fig4 = px.box(filtered_df, x="follower_category", y="engagement_rate",
+                  title="Engagement Berdasarkan Kategori Follower",
+                  labels={"follower_category": "Kategori Follower", "engagement_rate": "Engagement Rate"})
+    st.plotly_chart(fig4, use_container_width=True)
+    st.caption("Grafik ini digunakan untuk melihat sebaran engagement pada setiap kategori follower dan mengidentifikasi adanya perbedaan pola interaksi.")
 
-# SCATTER
-st.markdown("Hubungan Jumlah Follower dan Engagement")
+# ROW 3
+col1, col2 = st.columns(2)
 
-fig_scatter = px.scatter(
-    filtered_df,
-    x="follower_count",
-    y="engagement_rate",
-    color="platform",
-    labels={"follower_count": "Jumlah Follower", "engagement_rate": "Engagement (%)"}
-)
-fig_scatter.update_layout(height=350)
-st.plotly_chart(fig_scatter, use_container_width=True)
+with col1:
+    fig5 = px.scatter(filtered_df, x="follower_count", y="engagement_rate",
+                      title="Hubungan Jumlah Follower dan Engagement",
+                      labels={"follower_count": "Jumlah Follower", "engagement_rate": "Engagement Rate"})
+    st.plotly_chart(fig5, use_container_width=True)
+    st.caption("Grafik ini digunakan untuk melihat hubungan antara jumlah follower dengan tingkat engagement yang dihasilkan.")
 
-corr_val = filtered_df["follower_count"].corr(filtered_df["engagement_rate"])
-st.caption(f"Nilai korelasi antara jumlah follower dan engagement adalah **{corr_val:.2f}**, menunjukkan hubungan yang relatif lemah.")
+with col2:
+    fig6 = px.histogram(filtered_df, x="posts_per_week", nbins=20,
+                        title="Distribusi Jumlah Post per Minggu",
+                        labels={"posts_per_week": "Jumlah Post per Minggu"})
+    st.plotly_chart(fig6, use_container_width=True)
 
-# DISTRIBUTION
-st.markdown("Distribusi Data")
-
-col10, col11 = st.columns(2)
-
-with col10:
-    fig_box = px.box(
-        filtered_df,
-        x="platform",
-        y="engagement_rate",
-        labels={"platform": "Platform", "engagement_rate": "Engagement (%)"},
-        title="Distribusi Engagement per Platform"
-    )
-    fig_box.update_layout(height=330)
-    st.plotly_chart(fig_box, use_container_width=True)
-
-    st.caption("Terdapat perbedaan sebaran engagement antar platform.")
-
-with col11:
-    fig_hist = px.histogram(
-        filtered_df,
-        x="follower_count",
-        nbins=30,
-        labels={"follower_count": "Jumlah Follower"},
-        title="Distribusi Jumlah Follower"
-    )
-    fig_hist.update_layout(height=330)
-    st.plotly_chart(fig_hist, use_container_width=True)
-
-    median_val = filtered_df["follower_count"].median()
-    st.caption(f"Sebagian besar akun memiliki jumlah follower di sekitar atau di bawah median ({int(median_val):,}).")
+    dom = filtered_df["posts_per_week"].mode()[0]
+    st.caption(f"Frekuensi posting yang paling sering muncul adalah sekitar **{dom} post per minggu**. Grafik ini digunakan untuk melihat pola aktivitas posting akun.")
 
 # HEATMAP
-st.markdown("Korelasi Antar Variabel")
+st.subheader("Korelasi Antar Variabel")
 
-col_corr1, col_corr2, col_corr3 = st.columns([1,2,1])
+corr_cols = [
+    "follower_count",
+    "posts_per_week",
+    "engagement_rate",
+    "ad_spend_(usd)",
+    "conversion_rate",
+    "campaign_reach"
+]
 
-with col_corr2:
-    numeric_cols = [
-        "follower_count", "posts_per_week", "engagement_rate",
-        "ad_spend_(usd)", "conversion_rate", "campaign_reach"
-    ]
+corr = filtered_df[corr_cols].corr()
 
-    corr = filtered_df[numeric_cols].corr()
+fig7 = px.imshow(
+    corr,
+    text_auto=".2f",
+    aspect="auto",
+    title="Heatmap Korelasi Variabel"
+)
 
-    fig, ax = plt.subplots(figsize=(3.8,2.8))
-    sns.heatmap(
-        corr,
-        annot=True,
-        cmap="coolwarm",
-        ax=ax,
-        annot_kws={"size": 7},
-        cbar_kws={"shrink": 0.6}
-    )
-    ax.tick_params(axis='x', labelsize=7)
-    ax.tick_params(axis='y', labelsize=7)
+fig7.update_layout(width=700, height=500, title_x=0.5)
+fig7.update_traces(textfont_size=10)
 
-    st.pyplot(fig)
-
-    corr_abs = corr.abs()
-    corr_abs.values[[range(len(corr_abs))]*2] = 0
-    max_pair = corr_abs.unstack().idxmax()
-    max_val = corr_abs.unstack().max()
-
-    st.caption(f"Hubungan terkuat terdapat antara **{max_pair[0]}** dan **{max_pair[1]}** dengan nilai korelasi sebesar **{max_val:.2f}**.")
-
-# CONCLUSION
-st.markdown("Kesimpulan")
-
-st.markdown("""
-Berdasarkan hasil visualisasi, dapat disimpulkan bahwa performa media sosial tidak hanya
-dipengaruhi oleh jumlah follower, tetapi juga oleh tingkat engagement, konsistensi posting,
-serta efektivitas kampanye iklan. Oleh karena itu, strategi pemasaran digital perlu
-difokuskan pada peningkatan kualitas interaksi, bukan hanya pada pertumbuhan jumlah pengikut.
-""")
+st.plotly_chart(fig7, use_container_width=False)
+st.caption("Grafik ini digunakan untuk melihat kekuatan hubungan antar variabel dalam dataset.")
 
 # FOOTER
 st.markdown(
