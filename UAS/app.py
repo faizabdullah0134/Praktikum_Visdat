@@ -53,7 +53,7 @@ def load_data():
 df = load_data()
 
 # SIDEBAR FILTER
-st.sidebar.title("Filter Data")
+st.sidebar.title("Filter")
 
 platform_filter = st.sidebar.multiselect(
     "Platform",
@@ -100,8 +100,8 @@ filtered_df = df[
 ]
 
 # TITLE
-st.title("Dashboard Visualisasi Kinerja Media Sosial")
-st.markdown("Analisis performa media sosial berdasarkan engagement, aktivitas konten, dan jangkauan kampanye.")
+st.title("Kinerja Media Sosial")
+st.markdown("Analisis performa media sosial berdasarkan engagement dan aktivitas konten")
 st.markdown("---")
 
 # KPI CARDS
